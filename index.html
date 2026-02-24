@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Eco-Street: Gaviota a la vista</title>
+    <style>
+        body {
+            margin: 0; padding: 0; overflow: hidden;
+            font-family: 'Arial Black', sans-serif;
+            background-color: #222;
+            touch-action: none; user-select: none;
+        }
+
+        #game-container {
+            position: relative; width: 100vw; height: 100vh;
+            background: url('https://images.unsplash.com/photo-1519331379826-f10be5486c6f?q=80&w=1920&auto=format&fit=crop') center bottom / cover no-repeat,
+                        linear-gradient(to bottom, #4facfe 0%, #00f2fe 100%);
+        }
+
+        canvas { display: block; }
+
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; background: rgba(0, 0, 0, 0.85);
+            color: white; text-align: center; z-index: 10;
+        }
+
+        .alert-box {
+            border: 5px solid white;
+            padding: 30px;
+            border-radius: 25px;
+            animation: pulse 1.5s infinite;
+            max-width: 80%;
+        }
+
+        #seagull-alert-box { background: linear-gradient(45deg, #ff9800, #ff5722); box-shadow: 0 0 50px rgba(255, 152, 0, 0.8); }
+        #wind-alert-box { background: linear-gradient(45deg, #00c6ff, #0072ff); box-shadow: 0 0 50px rgba(0, 198, 255, 0.8); }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        button {
+            padding: 20px 40px; font-size: 1.5rem; margin: 10px;
+            cursor: pointer; border: none; border-radius: 15px;
+            font-weight: bold; transition: transform 0.1s;
+        }
+
+        button:active { transform: scale(0.9); }
+        .btn-verde { background: #2e7d32; color: white; border-bottom: 5px solid #1b5e20; }
+        .btn-azul { background: #1565c0; color: white; border-bottom: 5px solid #0d47a1; }
+        .btn-marron { background: #5d4037; color: white; border-bottom: 5px solid #3e2723; }
+        .btn-start { background: #f57c00; color: white; border-bottom: 5px solid #e65100; }
+
+        #ui-layer {
+            position: absolute; top: 20px; width: 100%;
+            display: flex; justify-content: space-around; align-items: center;
+            color: white; font-size: 1.8rem; pointer-events: none;
+            z-index: 5; 
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.9), -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        }
+
+        /* Estilo básico para el control de volumen */
+        #volume-control {
+            pointer-events: auto; /* Permite hacer clic aunque la capa padre lo impida */
+            display: flex; align-items: center; gap: 8px; font-size: 1.2rem;
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="ui-layer">
+        <div>Puntos: <span id="score">0</span></div>
+        <div>Vidas: <span id="lives">3</span></div>
+        <div id="volume-control">
+            <span id="vol-icon">🔊</span>
+            <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="0.5" style="width: 80px;">
+        </div>
+    </div>
+
+    <div id="screen-start" class="overlay">
+        <h1 style="font-size: 3rem; color: #ccff00;">ECO-STREET</h1>
+        <p>¡Recicla antes de que se lo lleven!</p>
+        <button class="btn-start" onclick="showSelection()">JUGAR</button>
+    </div>
+
+    <div id="screen-select" class="overlay hidden">
+        <h2>ELIGE TU CONTENEDOR</h2>
+        <button class="btn-verde" onclick="startGame('verde')">VIDRIO</button>
+        <button class="btn-azul" onclick="startGame('azul')">PAPEL</button>
+        <button class="btn-marron" onclick="startGame('marron')">ORGÁNICO</button>
+    </div>
+
+    <div id="screen-alert" class="overlay hidden">
+        <div id="seagull-alert-box" class="alert-box">
+            <h1 style="font-size: 3rem;">⚠️ ¡ALERTA! ⚠️</h1>
+            <p style="font-size: 1.5rem;">Una <strong>GAVIOTA LADRONA</strong> ha detectado tu basura.</p>
+        </div>
+    </div>
+
+    <div id="screen-alert-wind" class="overlay hidden">
+        <div id="wind-alert-box" class="alert-box">
+            <h1 style="font-size: 3rem;">💨 ¡DÍA VENTOSO! 💨</h1>
+            <p style="font-size: 1.5rem;">El viento moverá los objetos.</p>
+        </div>
+    </div>
+
+    <div id="screen-over" class="overlay hidden">
+        <h1>¡TE QUEDASTE SIN VIDAS!</h1>
+        <p>Puntuación final: <span id="final-score">0</span></p>
+        <button class="btn-start" onclick="location.reload()">REINTENTAR</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+</div>
+
+<script>
+    // ==========================================
+    // SISTEMA DE AUDIO CON CONTROL DE VOLUMEN
+    // ==========================================
+    const GameAudio = {
+        ctx: null, musicInterval: null, masterGain: null,
+        
+        init: function() {
+            if (!this.ctx) {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Crear nodo maestro de volumen
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.connect(this.ctx.destination);
+                
+                // Configurar volumen inicial
+                const slider = document.getElementById('volume-slider');
+                this.masterGain.gain.value = parseFloat(slider.value);
+                
+                // Escuchar cambios en el slider
+                slider.addEventListener('input', (e) => {
+                    const vol = parseFloat(e.target.value);
+                    this.masterGain.gain.value = vol;
+                    document.getElementById('vol-icon').innerText = vol === 0 ? '🔇' : (vol < 0.5 ? '🔉' : '🔊');
+                    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+                });
+            }
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+        },
+        
+        playTone: function(freq, type, duration, vol=0.05) {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+            
+            // Conectar al masterGain en vez del destination directamente
+            osc.connect(gain);
+            gain.connect(this.masterGain);
+            
+            osc.start(); osc.stop(this.ctx.currentTime + duration);
+        },
+
+        playCatch: function() { this.playTone(880, 'sine', 0.1, 0.1); },
+        playError: function() { this.playTone(150, 'sawtooth', 0.3, 0.1); },
+        playAlert: function() { 
+            this.playTone(400, 'square', 0.2, 0.1); 
+            setTimeout(() => this.playTone(600, 'square', 0.2, 0.1), 200); 
+        },
+        play1UP: function() {
+            this.playTone(440, 'square', 0.1, 0.1);
+            setTimeout(() => this.playTone(554, 'square', 0.1, 0.1), 100);
+            setTimeout(() => this.playTone(659, 'square', 0.3, 0.1), 200);
+        },
+        
+        playBird: function() {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(2000 + Math.random()*1000, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(4000, this.ctx.currentTime + 0.1);
+            osc.frequency.exponentialRampToValueAtTime(2000, this.ctx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+            
+            // Conectar al masterGain
+            osc.connect(gain); gain.connect(this.masterGain);
+            
+            osc.start(); osc.stop(this.ctx.currentTime + 0.2);
+        },
+
+        startMusic: function() {
+            this.stopMusic();
+            const melody = [329.6, 261.6, 329.6, 392.0, 440.0, 392.0, 349.2, 329.6, 293.6, 246.9, 293.6, 349.2, 392.0, 349.2, 329.6, 293.6, 261.6, 329.6, 392.0, 523.2, 440.0, 523.2, 392.0, 0, 349.2, 440.0, 329.6, 392.0, 293.6, 349.2, 261.6, 0];
+            const bass = [130.8, 130.8, 130.8, 130.8, 174.6, 174.6, 130.8, 130.8, 146.8, 146.8, 146.8, 146.8, 196.0, 196.0, 146.8, 146.8, 130.8, 130.8, 130.8, 130.8, 174.6, 174.6, 130.8, 130.8, 174.6, 174.6, 164.8, 164.8, 196.0, 196.0, 130.8, 130.8];
+            
+            let i = 0;
+            this.musicInterval = setInterval(() => {
+                if (!gameActive) return;
+                let n = melody[i % melody.length];
+                let b = bass[i % bass.length];
+                
+                if (n > 0) this.playTone(n, 'triangle', 0.15, 0.04);
+                if (b > 0) this.playTone(b, 'square', 0.15, 0.03);
+                
+                if (Math.random() < 0.1) this.playBird();
+                
+                i++;
+            }, 220);
+        },
+
+        stopMusic: function() { if (this.musicInterval) clearInterval(this.musicInterval); }
+    };
+
+    // ==========================================
+    // LÓGICA DEL JUEGO (SIN CAMBIOS)
+    // ==========================================
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const imgGaviota = new Image();
+    let isGaviotaLoaded = false;
+    imgGaviota.onload = () => { isGaviotaLoaded = true; }; 
+    imgGaviota.src = 'gaviota.png';
+
+    let score = 0, lives = 3, gameActive = false, selectedColor = '';
+    let binX = 0, items = [], spawnTimer;
+    let flashRed = 0, flashGreen = 0; 
+    let eventTriggered = false, windEventTriggered = false, isWindy = false, next1UpMilestone = 1; 
+    let seagull = { x: -150, y: 100, active: false, speed: 5 }; 
+
+    const binWidth = 130, binHeight = 150, itemFontSize = 65;
+
+    const wasteTypes = [
+        { label: '🍾', color: 'verde' }, { label: '🍷', color: 'verde' }, { label: '🫙', color: 'verde' },
+        { label: '📦', color: 'azul' }, { label: '📰', color: 'azul' }, { label: '✉️', color: 'azul' },
+        { label: '🍎', color: 'marron' }, { label: '🍌', color: 'marron' }, { label: '🍗', color: 'marron' },
+        { label: '🍕', color: 'marron' }, { label: '🐟', color: 'marron' }, { label: '🦴', color: 'marron' }
+    ];
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        binX = canvas.width / 2 - binWidth / 2;
+    }
+    window.addEventListener('resize', resize); resize();
+
+    function handleMove(e) {
+        if (!gameActive) return;
+        let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        binX = clientX - binWidth / 2;
+        if (binX < 0) binX = 0;
+        if (binX > canvas.width - binWidth) binX = canvas.width - binWidth;
+    }
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
+
+    function showSelection() {
+        GameAudio.init(); 
+        GameAudio.playCatch();
+        document.getElementById('screen-start').classList.add('hidden');
+        document.getElementById('screen-select').classList.remove('hidden');
+    }
+
+    function startGame(color) {
+        selectedColor = color;
+        document.getElementById('screen-select').classList.add('hidden');
+        gameActive = true; score = 0; lives = 3; items = []; 
+        eventTriggered = false; windEventTriggered = false; isWindy = false; next1UpMilestone = 1;
+        seagull.active = false; flashRed = 0; flashGreen = 0;
+        
+        GameAudio.init();
+        GameAudio.startMusic(); 
+        
+        updateUI(); spawnItem(); requestAnimationFrame(animate);
+    }
+
+    function updateUI() {
+        document.getElementById('score').innerText = score;
+        document.getElementById('lives').innerText = lives;
+    }
+
+    function triggerSeagullEvent() {
+        gameActive = false; GameAudio.playAlert(); clearTimeout(spawnTimer);
+        document.getElementById('screen-alert').classList.remove('hidden');
+        eventTriggered = true;
+        setTimeout(() => {
+            document.getElementById('screen-alert').classList.add('hidden');
+            gameActive = true; spawnItem(); requestAnimationFrame(animate);
+        }, 5000); 
+    }
+
+    function triggerWindEvent() {
+        gameActive = false; GameAudio.playAlert(); clearTimeout(spawnTimer);
+        document.getElementById('screen-alert-wind').classList.remove('hidden');
+        windEventTriggered = true;
+        setTimeout(() => {
+            document.getElementById('screen-alert-wind').classList.add('hidden');
+            isWindy = true; gameActive = true; spawnItem(); requestAnimationFrame(animate);
+        }, 5000); 
+    }
+
+    function spawnItem() {
+        if (!gameActive) return;
+        if (score >= 300 && Math.floor(score / 300) >= next1UpMilestone) {
+            next1UpMilestone++;
+            items.push({ x: Math.random() * (canvas.width - itemFontSize) + itemFontSize/2, y: -70, speed: 3.5, angle: 0, rotationSpeed: 0, label: '1UP', color: 'extra-life', stolen: false, randomOffset: Math.random() * Math.PI * 2 });
+        } else {
+            const type = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
+            items.push({ x: Math.random() * (canvas.width - itemFontSize) + itemFontSize/2, y: -70, speed: 3.0 + (score / 400), angle: 0, rotationSpeed: (Math.random() - 0.5) * 0.1, label: type.label, color: type.color, stolen: false, randomOffset: Math.random() * Math.PI * 2 });
+        }
+        spawnTimer = setTimeout(spawnItem, Math.max(800, 2000 - (score * 2)));
+    }
+
+    function updateSeagull() {
+        if (!eventTriggered || !gameActive) return;
+        if (!seagull.active) {
+            if (Math.random() < 0.015) { 
+                seagull.active = true; seagull.x = canvas.width + 150; seagull.y = 100 + Math.random() * 250; seagull.speed = -(4 + Math.random() * 3); 
+            }
+        } else {
+            seagull.x += seagull.speed;
+            if (seagull.x < -150) seagull.active = false; 
+            items.forEach(item => {
+                if (!item.stolen && item.color === selectedColor && item.color !== 'extra-life') {
+                    if (Math.sqrt(Math.pow(seagull.x - item.x, 2) + Math.pow(seagull.y - item.y, 2)) < 80) item.stolen = true;
+                }
+            });
+        }
+    }
+
+    function drawStreetBin(ctx, x, y, width, height, color) {
+        ctx.save(); ctx.lineWidth = 6; ctx.fillStyle = color; ctx.strokeStyle = '#111'; 
+        ctx.beginPath(); ctx.moveTo(x + 15, y + 25); ctx.lineTo(x + width - 15, y + 25);
+        ctx.lineTo(x + width, y + height); ctx.lineTo(x, y + height); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#333'; ctx.fillRect(x + 5, y, width - 10, 25);
+        ctx.fillStyle = '#000'; ctx.fillRect(x + 25, y + 40, width - 50, 15);
+        ctx.fillStyle = 'white'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(selectedColor.toUpperCase(), x + width/2, y + 80); ctx.restore();
+    }
+
+    function animate() {
+        if (!gameActive) return;
+        if (score >= 100 && !eventTriggered) { triggerSeagullEvent(); return; }
+        if (score >= 200 && !windEventTriggered) { triggerWindEvent(); return; }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (flashRed > 0) { ctx.fillStyle = `rgba(255, 0, 0, ${flashRed / 20})`; ctx.fillRect(0, 0, canvas.width, canvas.height); flashRed--; }
+        if (flashGreen > 0) { ctx.fillStyle = `rgba(0, 255, 0, ${flashGreen / 20})`; ctx.fillRect(0, 0, canvas.width, canvas.height); flashGreen--; }
+
+        ctx.fillStyle = 'rgba(80, 80, 80, 0.9)'; ctx.fillRect(0, canvas.height - 30, canvas.width, 30);
+
+        updateSeagull();
+        if (seagull.active) {
+            ctx.save();
+            if (isGaviotaLoaded) {
+                ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(seagull.x, seagull.y, 50, 0, Math.PI * 2); ctx.fill();
+                ctx.drawImage(imgGaviota, seagull.x - 60, seagull.y - 60, 120, 120);
+            } else {
+                ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF'; ctx.font = "80px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.strokeText("🦅", seagull.x, seagull.y); ctx.fillText("🦅", seagull.x, seagull.y);
+            }
+            ctx.restore();
+        }
+
+        drawStreetBin(ctx, binX, canvas.height - binHeight - 30, binWidth, binHeight, { 'verde': '#2e7d32', 'azul': '#1565c0', 'marron': '#5d4037' }[selectedColor]);
+
+        for (let i = items.length - 1; i >= 0; i--) {
+            let item = items[i];
+
+            if (item.stolen) {
+                item.x = seagull.x; item.y = seagull.y + 30; item.angle += 0.1; 
+                if (!seagull.active) { items.splice(i, 1); continue; }
+            } else {
+                item.y += item.speed; item.angle += item.rotationSpeed;
+                if (isWindy) {
+                    item.x += Math.sin((item.y / 60) + item.randomOffset) * 2.5;
+                    if (item.x < 40) item.x = 40; if (item.x > canvas.width - 40) item.x = canvas.width - 40;
+                }
+            }
+
+            ctx.save(); ctx.translate(item.x, item.y); ctx.rotate(item.angle);
+            ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF';
+            if (item.color === 'extra-life') {
+                ctx.fillStyle = '#ff0044'; ctx.font = `bold 40px Arial`; ctx.strokeText(`💚 1UP`, 0, 0); ctx.fillText(`💚 1UP`, 0, 0);
+            } else {
+                ctx.font = `${itemFontSize}px Arial`; ctx.strokeText(item.label, 0, 0); ctx.fillText(item.label, 0, 0);
+            }
+            ctx.restore();
+
+            if (!item.stolen) {
+                let hitBoxY = canvas.height - binHeight - 30;
+                if (item.y > hitBoxY && item.y < hitBoxY + 80 && item.x > binX - 20 && item.x < binX + binWidth + 20) {
+                    if (item.color === 'extra-life') { lives++; flashGreen = 15; GameAudio.play1UP(); } 
+                    else if (item.color === selectedColor) { score += 10; GameAudio.playCatch(); } 
+                    else { lives--; flashRed = 15; GameAudio.playError(); }
+                    items.splice(i, 1); updateUI();
+                } 
+                else if (item.y > canvas.height + 50) {
+                    if (item.color !== 'extra-life' && item.color === selectedColor) { lives--; flashRed = 15; GameAudio.playError(); }
+                    items.splice(i, 1); updateUI();
+                }
+            }
+            if (lives <= 0) { gameOver(); break; }
+        }
+        if (gameActive) requestAnimationFrame(animate);
+    }
+
+    function gameOver() {
+        gameActive = false; GameAudio.stopMusic(); GameAudio.playError();
+        clearTimeout(spawnTimer); document.getElementById('final-score').innerText = score; document.getElementById('screen-over').classList.remove('hidden');
+    }
+</script>
+</body>
+</html>
