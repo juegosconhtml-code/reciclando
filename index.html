@@ -64,10 +64,8 @@
             text-shadow: 3px 3px 6px rgba(0,0,0,0.9), -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
         }
 
-        /* Estilo básico para el control de volumen */
         #volume-control {
-            pointer-events: auto; /* Permite hacer clic aunque la capa padre lo impida */
-            display: flex; align-items: center; gap: 8px; font-size: 1.2rem;
+            pointer-events: auto; display: flex; align-items: center; gap: 8px; font-size: 1.2rem;
         }
 
         .hidden { display: none !important; }
@@ -123,7 +121,7 @@
 
 <script>
     // ==========================================
-    // SISTEMA DE AUDIO CON CONTROL DE VOLUMEN
+    // SISTEMA DE AUDIO
     // ==========================================
     const GameAudio = {
         ctx: null, musicInterval: null, masterGain: null,
@@ -131,16 +129,10 @@
         init: function() {
             if (!this.ctx) {
                 this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-                
-                // Crear nodo maestro de volumen
                 this.masterGain = this.ctx.createGain();
                 this.masterGain.connect(this.ctx.destination);
-                
-                // Configurar volumen inicial
                 const slider = document.getElementById('volume-slider');
                 this.masterGain.gain.value = parseFloat(slider.value);
-                
-                // Escuchar cambios en el slider
                 slider.addEventListener('input', (e) => {
                     const vol = parseFloat(e.target.value);
                     this.masterGain.gain.value = vol;
@@ -155,44 +147,27 @@
             if (!this.ctx) return;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            osc.type = type; osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
             gain.gain.setValueAtTime(vol, this.ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
-            
-            // Conectar al masterGain en vez del destination directamente
-            osc.connect(gain);
-            gain.connect(this.masterGain);
-            
+            osc.connect(gain); gain.connect(this.masterGain);
             osc.start(); osc.stop(this.ctx.currentTime + duration);
         },
 
         playCatch: function() { this.playTone(880, 'sine', 0.1, 0.1); },
         playError: function() { this.playTone(150, 'sawtooth', 0.3, 0.1); },
-        playAlert: function() { 
-            this.playTone(400, 'square', 0.2, 0.1); 
-            setTimeout(() => this.playTone(600, 'square', 0.2, 0.1), 200); 
-        },
-        play1UP: function() {
-            this.playTone(440, 'square', 0.1, 0.1);
-            setTimeout(() => this.playTone(554, 'square', 0.1, 0.1), 100);
-            setTimeout(() => this.playTone(659, 'square', 0.3, 0.1), 200);
-        },
+        playAlert: function() { this.playTone(400, 'square', 0.2, 0.1); setTimeout(() => this.playTone(600, 'square', 0.2, 0.1), 200); },
+        play1UP: function() { this.playTone(440, 'square', 0.1, 0.1); setTimeout(() => this.playTone(554, 'square', 0.1, 0.1), 100); setTimeout(() => this.playTone(659, 'square', 0.3, 0.1), 200); },
         
         playBird: function() {
             if (!this.ctx) return;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(2000 + Math.random()*1000, this.ctx.currentTime);
+            const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(2000 + Math.random()*1000, this.ctx.currentTime);
             osc.frequency.exponentialRampToValueAtTime(4000, this.ctx.currentTime + 0.1);
             osc.frequency.exponentialRampToValueAtTime(2000, this.ctx.currentTime + 0.2);
             gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
-            
-            // Conectar al masterGain
             osc.connect(gain); gain.connect(this.masterGain);
-            
             osc.start(); osc.stop(this.ctx.currentTime + 0.2);
         },
 
@@ -200,18 +175,13 @@
             this.stopMusic();
             const melody = [329.6, 261.6, 329.6, 392.0, 440.0, 392.0, 349.2, 329.6, 293.6, 246.9, 293.6, 349.2, 392.0, 349.2, 329.6, 293.6, 261.6, 329.6, 392.0, 523.2, 440.0, 523.2, 392.0, 0, 349.2, 440.0, 329.6, 392.0, 293.6, 349.2, 261.6, 0];
             const bass = [130.8, 130.8, 130.8, 130.8, 174.6, 174.6, 130.8, 130.8, 146.8, 146.8, 146.8, 146.8, 196.0, 196.0, 146.8, 146.8, 130.8, 130.8, 130.8, 130.8, 174.6, 174.6, 130.8, 130.8, 174.6, 174.6, 164.8, 164.8, 196.0, 196.0, 130.8, 130.8];
-            
             let i = 0;
             this.musicInterval = setInterval(() => {
                 if (!gameActive) return;
-                let n = melody[i % melody.length];
-                let b = bass[i % bass.length];
-                
+                let n = melody[i % melody.length]; let b = bass[i % bass.length];
                 if (n > 0) this.playTone(n, 'triangle', 0.15, 0.04);
                 if (b > 0) this.playTone(b, 'square', 0.15, 0.03);
-                
                 if (Math.random() < 0.1) this.playBird();
-                
                 i++;
             }, 220);
         },
@@ -220,7 +190,7 @@
     };
 
     // ==========================================
-    // LÓGICA DEL JUEGO (SIN CAMBIOS)
+    // LÓGICA DEL JUEGO
     // ==========================================
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -363,7 +333,7 @@
         if (seagull.active) {
             ctx.save();
             if (isGaviotaLoaded) {
-                ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(seagull.x, seagull.y, 50, 0, Math.PI * 2); ctx.fill();
+                // Círculo blanco eliminado, solo se dibuja la imagen
                 ctx.drawImage(imgGaviota, seagull.x - 60, seagull.y - 60, 120, 120);
             } else {
                 ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF'; ctx.font = "80px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
