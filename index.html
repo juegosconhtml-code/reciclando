@@ -70,7 +70,6 @@
 
         .hidden { display: none !important; }
 
-        /* NUEVOS ESTILOS PARA EL RANKING */
         #score-entry input {
             padding: 10px; font-size: 1.2rem; border-radius: 10px; border: none;
             margin-bottom: 10px; text-align: center; font-family: 'Arial Black', sans-serif;
@@ -215,7 +214,7 @@
     };
 
     // ==========================================
-    // SISTEMA DE RANKING (NUEVO)
+    // SISTEMA DE RANKING
     // ==========================================
     function loadScores() {
         const scores = localStorage.getItem('ecoStreetRanking');
@@ -245,13 +244,11 @@
         let scores = loadScores();
         scores.push({ name: name, score: score });
         
-        // Ordenar de mayor a menor y guardar solo los 5 mejores
         scores.sort((a, b) => b.score - a.score);
         scores = scores.slice(0, 5);
         
         localStorage.setItem('ecoStreetRanking', JSON.stringify(scores));
         
-        // Ocultar la entrada de texto y actualizar el ranking visual
         document.getElementById('score-entry').classList.add('hidden');
         displayRanking();
     }
@@ -346,14 +343,31 @@
 
     function spawnItem() {
         if (!gameActive) return;
+
+        let currentSpeed = 3.0 + (score / 400);
+        let currentInterval = Math.max(800, 2000 - (score * 2));
+
+        if (score >= 300) {
+            let increments = Math.floor((score - 300) / 100);
+            
+            let speedAt300 = 3.0 + (300 / 400); 
+            let intervalAt300 = 2000 - (300 * 2); 
+            
+            currentSpeed = speedAt300 * Math.pow(1.10, increments);
+            currentInterval = intervalAt300 / Math.pow(1.20, increments);
+            
+            currentInterval = Math.max(200, currentInterval);
+        }
+
         if (score >= 300 && Math.floor(score / 300) >= next1UpMilestone) {
             next1UpMilestone++;
-            items.push({ x: Math.random() * (canvas.width - itemFontSize) + itemFontSize/2, y: -70, speed: 3.5, angle: 0, rotationSpeed: 0, label: '1UP', color: 'extra-life', stolen: false, randomOffset: Math.random() * Math.PI * 2 });
+            items.push({ x: Math.random() * (canvas.width - itemFontSize) + itemFontSize/2, y: -70, speed: Math.max(3.5, currentSpeed), angle: 0, rotationSpeed: 0, label: '1UP', color: 'extra-life', stolen: false, randomOffset: Math.random() * Math.PI * 2 });
         } else {
             const type = wasteTypes[Math.floor(Math.random() * wasteTypes.length)];
-            items.push({ x: Math.random() * (canvas.width - itemFontSize) + itemFontSize/2, y: -70, speed: 3.0 + (score / 400), angle: 0, rotationSpeed: (Math.random() - 0.5) * 0.1, label: type.label, color: type.color, stolen: false, randomOffset: Math.random() * Math.PI * 2 });
+            items.push({ x: Math.random() * (canvas.width - itemFontSize) + itemFontSize/2, y: -70, speed: currentSpeed, angle: 0, rotationSpeed: (Math.random() - 0.5) * 0.1, label: type.label, color: type.color, stolen: false, randomOffset: Math.random() * Math.PI * 2 });
         }
-        spawnTimer = setTimeout(spawnItem, Math.max(800, 2000 - (score * 2)));
+        
+        spawnTimer = setTimeout(spawnItem, currentInterval);
     }
 
     function updateSeagull() {
@@ -374,14 +388,17 @@
     }
 
     function drawStreetBin(ctx, x, y, width, height, color) {
-        ctx.save(); ctx.lineWidth = 6; ctx.fillStyle = color; ctx.strokeStyle = '#111'; 
+        ctx.save();
+        ctx.lineWidth = 6; ctx.fillStyle = color; ctx.strokeStyle = '#111'; 
         ctx.beginPath(); ctx.moveTo(x + 15, y + 25); ctx.lineTo(x + width - 15, y + 25);
         ctx.lineTo(x + width, y + height); ctx.lineTo(x, y + height); ctx.closePath();
         ctx.fill(); ctx.stroke();
+        
         ctx.fillStyle = '#333'; ctx.fillRect(x + 5, y, width - 10, 25);
         ctx.fillStyle = '#000'; ctx.fillRect(x + 25, y + 40, width - 50, 15);
         ctx.fillStyle = 'white'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center';
-        ctx.fillText(selectedColor.toUpperCase(), x + width/2, y + 80); ctx.restore();
+        ctx.fillText(selectedColor.toUpperCase(), x + width/2, y + 80); 
+        ctx.restore();
     }
 
     function animate() {
@@ -389,10 +406,17 @@
         if (score >= 100 && !eventTriggered) { triggerSeagullEvent(); return; }
         if (score >= 200 && !windEventTriggered) { triggerWindEvent(); return; }
 
+        let isNight = score >= 300 && (score % 300) < 100;
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (flashRed > 0) { ctx.fillStyle = `rgba(255, 0, 0, ${flashRed / 20})`; ctx.fillRect(0, 0, canvas.width, canvas.height); flashRed--; }
         if (flashGreen > 0) { ctx.fillStyle = `rgba(0, 255, 0, ${flashGreen / 20})`; ctx.fillRect(0, 0, canvas.width, canvas.height); flashGreen--; }
+
+        if (isNight) {
+            ctx.fillStyle = 'rgba(0, 10, 30, 0.75)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         ctx.fillStyle = 'rgba(80, 80, 80, 0.9)'; ctx.fillRect(0, canvas.height - 30, canvas.width, 30);
 
@@ -426,6 +450,7 @@
 
             ctx.save(); ctx.translate(item.x, item.y); ctx.rotate(item.angle);
             ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF';
+
             if (item.color === 'extra-life') {
                 ctx.fillStyle = '#ff0044'; ctx.font = `bold 40px Arial`; ctx.strokeText(`💚 1UP`, 0, 0); ctx.fillText(`💚 1UP`, 0, 0);
             } else {
@@ -451,14 +476,12 @@
         if (gameActive) requestAnimationFrame(animate);
     }
 
-    // FUNCIÓN gameOver MODIFICADA PARA EL RANKING
     function gameOver() {
         gameActive = false; GameAudio.stopMusic(); GameAudio.playError();
         clearTimeout(spawnTimer); 
         
         document.getElementById('final-score').innerText = score; 
         
-        // Mostrar la entrada de texto y actualizar el ranking
         document.getElementById('score-entry').classList.remove('hidden');
         document.getElementById('player-name').value = ''; 
         displayRanking(); 
