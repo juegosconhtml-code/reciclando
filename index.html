@@ -69,6 +69,19 @@
         }
 
         .hidden { display: none !important; }
+
+        /* NUEVOS ESTILOS PARA EL RANKING */
+        #score-entry input {
+            padding: 10px; font-size: 1.2rem; border-radius: 10px; border: none;
+            margin-bottom: 10px; text-align: center; font-family: 'Arial Black', sans-serif;
+            outline: none;
+        }
+        #ranking-container {
+            margin-top: 15px; text-align: left; background: rgba(0,0,0,0.5);
+            padding: 15px 30px; border-radius: 15px; border: 2px solid #555;
+        }
+        #ranking-container h2 { margin: 0 0 10px 0; font-size: 1.2rem; text-align: center; color: #ccff00; }
+        #ranking-list { font-size: 1.1rem; padding-left: 20px; margin: 0; color: white; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -111,9 +124,21 @@
     </div>
 
     <div id="screen-over" class="overlay hidden">
-        <h1>¡TE QUEDASTE SIN VIDAS!</h1>
-        <p>Puntuación final: <span id="final-score">0</span></p>
-        <button class="btn-start" onclick="location.reload()">REINTENTAR</button>
+        <h1 style="margin-bottom: 5px;">¡TE QUEDASTE SIN VIDAS!</h1>
+        <p style="margin-top: 0; font-size: 1.5rem;">Puntuación final: <strong id="final-score" style="color: #ccff00;">0</strong></p>
+        
+        <div id="score-entry">
+            <input type="text" id="player-name" maxlength="15" placeholder="Tu nombre">
+            <br>
+            <button class="btn-azul" style="font-size: 1.2rem; padding: 10px 20px;" onclick="saveScore()">GUARDAR PUNTUACIÓN</button>
+        </div>
+
+        <div id="ranking-container">
+            <h2>🏆 TOP 5 RECICLADORES 🏆</h2>
+            <ol id="ranking-list"></ol>
+        </div>
+
+        <button class="btn-start" onclick="location.reload()" style="font-size: 1.2rem; padding: 10px 20px;">REINTENTAR</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -188,6 +213,48 @@
 
         stopMusic: function() { if (this.musicInterval) clearInterval(this.musicInterval); }
     };
+
+    // ==========================================
+    // SISTEMA DE RANKING (NUEVO)
+    // ==========================================
+    function loadScores() {
+        const scores = localStorage.getItem('ecoStreetRanking');
+        return scores ? JSON.parse(scores) : [];
+    }
+
+    function displayRanking() {
+        const scores = loadScores();
+        const list = document.getElementById('ranking-list');
+        list.innerHTML = '';
+        
+        if (scores.length === 0) {
+            list.innerHTML = '<li>Aún no hay registros.</li>';
+        } else {
+            scores.forEach(entry => {
+                const li = document.createElement('li');
+                li.innerHTML = `<strong>${entry.name}</strong> - ${entry.score} pts`;
+                list.appendChild(li);
+            });
+        }
+    }
+
+    function saveScore() {
+        const nameInput = document.getElementById('player-name');
+        let name = nameInput.value.trim() || 'Anónimo';
+        
+        let scores = loadScores();
+        scores.push({ name: name, score: score });
+        
+        // Ordenar de mayor a menor y guardar solo los 5 mejores
+        scores.sort((a, b) => b.score - a.score);
+        scores = scores.slice(0, 5);
+        
+        localStorage.setItem('ecoStreetRanking', JSON.stringify(scores));
+        
+        // Ocultar la entrada de texto y actualizar el ranking visual
+        document.getElementById('score-entry').classList.add('hidden');
+        displayRanking();
+    }
 
     // ==========================================
     // LÓGICA DEL JUEGO
@@ -333,7 +400,6 @@
         if (seagull.active) {
             ctx.save();
             if (isGaviotaLoaded) {
-                // Círculo blanco eliminado, solo se dibuja la imagen
                 ctx.drawImage(imgGaviota, seagull.x - 60, seagull.y - 60, 120, 120);
             } else {
                 ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF'; ctx.font = "80px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -385,9 +451,19 @@
         if (gameActive) requestAnimationFrame(animate);
     }
 
+    // FUNCIÓN gameOver MODIFICADA PARA EL RANKING
     function gameOver() {
         gameActive = false; GameAudio.stopMusic(); GameAudio.playError();
-        clearTimeout(spawnTimer); document.getElementById('final-score').innerText = score; document.getElementById('screen-over').classList.remove('hidden');
+        clearTimeout(spawnTimer); 
+        
+        document.getElementById('final-score').innerText = score; 
+        
+        // Mostrar la entrada de texto y actualizar el ranking
+        document.getElementById('score-entry').classList.remove('hidden');
+        document.getElementById('player-name').value = ''; 
+        displayRanking(); 
+        
+        document.getElementById('screen-over').classList.remove('hidden');
     }
 </script>
 </body>
